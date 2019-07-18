@@ -1,0 +1,195 @@
+import random
+from sklearn.metrics import classification_report, confusion_matrix 
+
+from sklearn.metrics import confusion_matrix
+import math
+import pandas as pd 
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.preprocessing import StandardScaler,normalize
+
+from sklearn.metrics import accuracy_score 
+
+data = pd.read_csv(r'C:\Users\abhis\Desktop\train - Copy.csv')
+target_data = data['loan_default']
+train = data.copy()
+
+
+new = []
+
+for i in train['AVERAGE.ACCT.AGE']:
+    y = int(i[0])
+    if i[6] == 'm':
+        m = int(i[5])
+    else:
+        m = int(i[5:7])
+    t = y*12 + m
+    new.append(t)
+train.loc[:,'AVERAGE.ACCT.AGE'] = new
+
+new = []
+
+for i in train['CREDIT.HISTORY.LENGTH']:
+    y = int(i[0])
+    if i[6] == 'm':
+        m = int(i[5])
+    else:
+        m = int(i[5:7])
+    t = y*12 + m
+    new.append(t)
+train.loc[:,'CREDIT.HISTORY.LENGTH'] = new
+train['Date.of.Birth']  = pd.to_datetime(train['Date.of.Birth'])        
+train['DisbursalDate']  = pd.to_datetime(train['DisbursalDate'])  
+train['Employment.Type'] = train['Employment.Type'].astype('category')
+train.head()
+train = train.replace({'PERFORM_CNS.SCORE.DESCRIPTION':{'C-Very Low Risk':'Low', 'A-Very Low Risk':'Low',
+                                                       'B-Very Low Risk':'Low', 'D-Very Low Risk':'Low',
+                                                       'F-Low Risk':'Low', 'E-Low Risk':'Low', 'G-Low Risk':'Low',
+                                                       'H-Medium Risk': 'Medium', 'I-Medium Risk': 'Medium',
+                                                       'J-High Risk':'High', 'K-High Risk':'High','L-Very High Risk':'High',
+                                                       'M-Very High Risk':'High','Not Scored: More than 50 active Accounts found':'Not Scored',
+                                                       'Not Scored: Only a Guarantor':'Not Scored','Not Scored: Not Enough Info available on the customer':'Not Scored',
+                                                        'Not Scored: No Activity seen on the customer (Inactive)':'Not Scored','Not Scored: No Updates available in last 36 months':'Not Scored',
+                                                       'Not Scored: Sufficient History Not Available':'Not Scored', 'No Bureau History Available':'Not Scored'
+                                                       }})                    
+
+
+
+
+corr = train.corr().round(2)
+f,ax = plt.subplots(figsize = (20,20))
+#sns.heatmap(corr,annot=True)
+
+#col = list(corr.nlargest(11,'loan_default')['loan_default'].index)
+#corr['loan_default'].sort_values(ascending = False)
+#upper = corr.where(np.triu(np.ones(corr.shape),k=1).astype(np.bool))
+#to_drop = [col for col in upper.columns if any(upper[col]>=0.90)]
+
+
+
+
+train = train.drop(['loan_default','PRI.DISBURSED.AMOUNT', 'SEC.SANCTIONED.AMOUNT', 'SEC.DISBURSED.AMOUNT','UniqueID'],axis='columns')
+
+train['Employment.Type'] = train['Employment.Type'].fillna(method = 'bfill')
+
+num_data = train.select_dtypes(include=['int64','float64'])
+scaler = StandardScaler()
+scaled_data = pd.DataFrame(scaler.fit_transform(num_data),columns=num_data.columns)
+normalized_data = pd.DataFrame(normalize(num_data),columns=num_data.columns)
+cat_data = train.select_dtypes(include=['object'])
+
+
+cat_data = pd.get_dummies(cat_data)
+#cat_data.head()
+
+train_final = pd.concat([normalized_data,cat_data],axis='columns')
+train_final =train.copy()
+#train_final.hist(figsize=(20,20))
+
+
+train_final = train_final.replace({'Employment.Type':{'Salaried':1, 'Self employed':0}})                                   
+#print(train_final.dtypes)
+train_final = train_final.replace({'PERFORM_CNS.SCORE.DESCRIPTION':{'Not Scored':0, 'Low':1,'Medium':2, 'High':3 }}) 
+                                                                             
+train_final = train_final.select_dtypes(include=['int64','float64']) 
+
+
+from sklearn.model_selection import train_test_split  
+X_train, X_test, y_train, y_test = train_test_split(train_final, target_data, test_size = 0.20)  
+
+dataset = pd.concat([train_final,target_data],axis='columns')
+#print(dataset)
+dataset = dataset.values.tolist()
+
+#print(List)
+#print(train_final.dtypes)
+
+
+
+separated = {}
+for i in range(len(dataset)):
+    vector = dataset[i]
+    if (vector[-1] not in separated):
+        separated[vector[-1]] = []
+    separated[vector[-1]].append(vector)
+ 
+
+
+#print(2)
+mean_0=np.mean(separated[0],axis=0)
+mean_1=np.mean(separated[1],axis=0)        
+std_0=np.std(separated[0],axis=0)       
+std_1=np.std(separated[1],axis=0)
+#print(mean_0)
+#print(separated)
+#print(train_final)
+#print(len(separated))
+a = separated[0]
+b = separated[1]
+for i in range(len(a)):
+    a[i].remove(a[i][34])
+    
+#print((a[0]))    
+for i in range(len(b)):
+    b[i].remove(b[i][34]) 
+    
+
+    
+ 
+
+                       
+                       
+separated[0] = a  
+separated[1] = b
+def likelyhood(x,mean,sigma):
+    return np.exp(-(x-mean)**2/(2*sigma**2))*(1/(np.sqrt(2*np.pi)*sigma))    
+
+
+
+
+                       
+mean_0=np.mean(separated[0],axis=0)
+mean_1=np.mean(separated[1],axis=0)        
+std_0=np.std(separated[0],axis=0)       
+std_1=np.std(separated[1],axis=0)
+
+separated[1] = np.array(separated[1])
+separated[0] = np.array(separated[0]) 
+
+
+
+def posterior(X,X_train_class,mean_,std_):
+            product=np.prod(likelyhood(X,mean_,std_),axis=1)
+            product=product*  (X_train_class.shape[0]/X_train.shape[0])
+            return product    
+    
+    
+    
+    
+p_1=posterior(X_test,separated[1],mean_1,std_1)    
+p_0=posterior(X_test,separated[0],mean_0,std_1)     
+y_pred=1*(p_1>p_0)  
+    
+
+metric = confusion_matrix(y_test,y_pred)
+print("Confusion Matrix for Naive Bayes Model is")
+print(metric)
+
+
+print("Classification Report for Naive Bayes Model is")
+print(classification_report(y_test, y_pred)) 
+    
+    
+    
+acc = accuracy_score(y_test, y_pred) 
+    
+print("Accuracy for Naive Bayes Model is")    
+print(acc)    
+    
+    
+
+    
+    
+    
+    

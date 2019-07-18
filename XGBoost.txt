@@ -1,0 +1,122 @@
+import xgboost as xgb
+from sklearn.metrics import classification_report, confusion_matrix  
+import math
+import pandas as pd 
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.preprocessing import StandardScaler,normalize
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import mean_squared_error
+
+data = pd.read_csv(r'C:\Users\abhis\Desktop\train - Copy.csv')
+target_data = data['loan_default']
+train = data.copy()
+
+
+new = []
+
+for i in train['AVERAGE.ACCT.AGE']:
+    y = int(i[0])
+    if i[6] == 'm':
+        m = int(i[5])
+    else:
+        m = int(i[5:7])
+    t = y*12 + m
+    new.append(t)
+train.loc[:,'AVERAGE.ACCT.AGE'] = new
+
+new = []
+
+for i in train['CREDIT.HISTORY.LENGTH']:
+    y = int(i[0])
+    if i[6] == 'm':
+        m = int(i[5])
+    else:
+        m = int(i[5:7])
+    t = y*12 + m
+    new.append(t)
+train.loc[:,'CREDIT.HISTORY.LENGTH'] = new
+train['Date.of.Birth']  = pd.to_datetime(train['Date.of.Birth'])        
+train['DisbursalDate']  = pd.to_datetime(train['DisbursalDate'])  
+train['Employment.Type'] = train['Employment.Type'].astype('category')
+train.head()
+train = train.replace({'PERFORM_CNS.SCORE.DESCRIPTION':{'C-Very Low Risk':'Low', 'A-Very Low Risk':'Low',
+                                                       'B-Very Low Risk':'Low', 'D-Very Low Risk':'Low',
+                                                       'F-Low Risk':'Low', 'E-Low Risk':'Low', 'G-Low Risk':'Low',
+                                                       'H-Medium Risk': 'Medium', 'I-Medium Risk': 'Medium',
+                                                       'J-High Risk':'High', 'K-High Risk':'High','L-Very High Risk':'High',
+                                                       'M-Very High Risk':'High','Not Scored: More than 50 active Accounts found':'Not Scored',
+                                                       'Not Scored: Only a Guarantor':'Not Scored','Not Scored: Not Enough Info available on the customer':'Not Scored',
+                                                        'Not Scored: No Activity seen on the customer (Inactive)':'Not Scored','Not Scored: No Updates available in last 36 months':'Not Scored',
+                                                       'Not Scored: Sufficient History Not Available':'Not Scored', 'No Bureau History Available':'Not Scored'
+                                                       }})                    
+
+
+
+
+corr = train.corr().round(2)
+f,ax = plt.subplots(figsize = (20,20))
+#sns.heatmap(corr,annot=True)
+
+col = list(corr.nlargest(11,'loan_default')['loan_default'].index)
+corr['loan_default'].sort_values(ascending = False)
+upper = corr.where(np.triu(np.ones(corr.shape),k=1).astype(np.bool))
+to_drop = [col for col in upper.columns if any(upper[col]>=0.90)]
+
+
+
+
+train = train.drop(['loan_default','PRI.DISBURSED.AMOUNT', 'SEC.SANCTIONED.AMOUNT', 'SEC.DISBURSED.AMOUNT','UniqueID'],axis='columns')
+
+train['Employment.Type'] = train['Employment.Type'].fillna(method = 'bfill')
+
+num_data = train.select_dtypes(include=['int64','float64'])
+scaler = StandardScaler()
+scaled_data = pd.DataFrame(scaler.fit_transform(num_data),columns=num_data.columns)
+normalized_data = pd.DataFrame(normalize(num_data),columns=num_data.columns)
+cat_data = train.select_dtypes(include=['object'])
+
+
+cat_data = pd.get_dummies(cat_data)
+#cat_data.head()
+
+train_final = pd.concat([normalized_data,cat_data],axis='columns')
+train_final =train.copy()
+#train_final.hist(figsize=(20,20))
+
+
+train_final = train_final.replace({'Employment.Type':{'Salaried':1, 'Self employed':0}})                                   
+#print(train_final.dtypes)
+train_final = train_final.replace({'PERFORM_CNS.SCORE.DESCRIPTION':{'Not Scored':0, 'Low':1,'Medium':2, 'High':3 }}) 
+                                                                             
+train_final = train_final.select_dtypes(include=['int64','float64'])                                                      
+                                                                   
+from sklearn.model_selection import train_test_split  
+X_train, X_test, y_train, y_test = train_test_split(train_final, target_data, test_size = 0.20)  
+
+g_cl = xgb.XGBClassifier(objective = 'binary:logistic',seed=123,colsample_bytree = 0.3,learning_rate = 0.1,ax_depth = 5, alpha = 10, n_estimators = 10)
+
+g_cl.fit(X_train,y_train)
+#g_cl.score(X_train,y_train)
+
+
+
+preds = g_cl.predict(X_test)
+
+rmse = np.sqrt(mean_squared_error(y_test, preds))
+#print("RMSE: %f" % (rmse))
+data_dmatrix = xgb.DMatrix(data=train_final,label=target_data)
+params = {"objective":"reg:linear",'colsample_bytree': 0.3,'learning_rate': 0.1,
+                'max_depth': 5, 'alpha': 10}
+
+cv_results = xgb.cv(dtrain=data_dmatrix, params=params, nfold=3,
+                    num_boost_round=50,early_stopping_rounds=10,metrics="rmse", as_pandas=True, seed=123)
+
+cv_results.head()
+
+print((cv_results["test-rmse-mean"]).tail(1))
+
+
+
